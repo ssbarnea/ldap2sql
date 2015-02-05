@@ -7,6 +7,7 @@ Also it has some neat features like:
 * accounts removed or disabled from LDAP are not removed from the database and are only marked as deleted.
 * account status is saved as friendly field
 * manager is also saved
+* it does mark if an account have a gravatar or not
 
 What you can use this for:
 * Find how many people joined or left the company
