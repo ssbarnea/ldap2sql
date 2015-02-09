@@ -48,12 +48,12 @@ class CustomUpdater(object):
             self.engine = create_engine(stats_uri, convert_unicode=True)
         if activedirectory_uri is not None:
             self.ad = ActiveDirectory(activedirectory_uri, paged_size=1000, size_limit=50000)
-        self.fields = ['mail', 'title', 'manager', 'distinguishedName', 'postalCode', 'telephoneNumber', 'givenName', 'facsimileTelephoneNumber',
+        self.fields = ['mail', 'title', 'manager', 'distinguishedName', 'postalCode', 'telephoneNumber', 'givenName', 'name', 'facsimileTelephoneNumber',
                        'department', 'company', 'streetAddress', 'sAMAccountType', 'mobile', 'c', 'l', 'st', 'extensionAttribute14',
-                       'extensionAttribute15', 'extensionAttribute3']
-        self.sql_names = ['mail', 'title', 'managerdn', 'distinguishedname', 'postalcode', 'phone', 'givenname', 'fax',
+                       'extensionAttribute15', 'extensionAttribute3', 'sAMAccountName', 'userAccountControl']
+        self.sql_names = ['mail', 'title', 'managerdn', 'distinguishedname', 'postalcode', 'phone', 'givenname', 'name', 'fax',
                           'department', 'company', 'streetaddress', 'samaccounttype', 'mobile', 'country', 'locale', 'state', 'vp',
-                          'region', 'office']
+                          'region', 'office', 'username', 'useraccountcontrol']
         self.sql_times = ['created', 'changed']
         self.time_fields = ['whenCreated', 'whenChanged']
         self.exists = None
@@ -87,7 +87,7 @@ class CustomUpdater(object):
             newf = None
         else:
             newf = "(whenChanged>=" + self.get_max_date_ad() + ")"
-        self.users = self.ad.get_users(new_filter=newf)
+        self.users = self.ad.get_users(new_filter=newf, attrlist=self.fields)
         logging.info('Found %s users in AD using filter = %s' % (len(self.users), newf))
         if not self.users:
             raise NotImplemented("WTH")
@@ -96,10 +96,12 @@ class CustomUpdater(object):
                 logging.info("%s..." % count)
             #print count, user
             try:
-                atr = self.ad.get_attributes(user=user)
-            except Exception as e:
+                atr = self.users[user]
+            except NotImplementedError as e:
                 logging.error("Skipped user %s because %s" % (user, e))
-            update_query = 'UPDATE custom.activedirectory SET username=\'' + (self.escape_quote(user)).lower() + '\''
+                continue
+
+            update_query = 'UPDATE custom.activedirectory SET counter = counter+1 '
             for i in range(len(self.fields)):
                 update_query = self.update_fields(update_query, atr, self.fields[i], self.sql_names[i])
             update_query = self.update_times(update_query, atr)
@@ -107,13 +109,17 @@ class CustomUpdater(object):
                 update_query += ', is_active=\'false\''
             else:
                 update_query += ', is_active=\'true\''
-            update_query += ' WHERE samaccountname=\'' + user + '\';'
+            update_query += ' WHERE username=\'' + user + '\';'
 
-            insert_query = 'INSERT INTO custom.activedirectory (username, samaccountname'
+            insert_query = 'INSERT INTO custom.activedirectory ('
+            first = True
             for i in range(len(self.sql_names)):
                 try:
                     atr[self.fields[i]]
-                    insert_query += ', ' + self.sql_names[i]
+                    if not first:
+                        insert_query += ','
+                    insert_query += self.sql_names[i]
+                    first = False
                 except (IndexError, KeyError):
                     pass
             for i in range(len(self.sql_times)):
@@ -122,15 +128,17 @@ class CustomUpdater(object):
                     insert_query += ', ' + self.sql_times[i]
                 except (IndexError, KeyError):
                     pass
-
-            insert_query += ', is_active) SELECT \'' + (self.escape_quote(user)).lower() + '\', \'' + self.escape_quote(user) + '\''
+            
+            # UPSERT implementation based on http://stackoverflow.com/a/6527838/99834
+            
+            insert_query += ',is_active) SELECT '
             insert_query = self.insert_fields(insert_query, atr)
             insert_query = self.insert_times(insert_query, atr)
             if int(atr['userAccountControl']) & 0x02:
-                insert_query += ', \'false\''
+                insert_query += ',\'false\''
             else:
-                insert_query += ', \'true\''
-            insert_query += ' WHERE NOT EXISTS (SELECT 1 FROM custom.activedirectory WHERE samaccountname= \''\
+                insert_query += ',\'true\''
+            insert_query += ' WHERE NOT EXISTS (SELECT 1 FROM custom.activedirectory WHERE username= \''\
                     + self.escape_quote(user) + '\');'
 
             self.engine.execute(update_query)
@@ -143,13 +151,13 @@ class CustomUpdater(object):
     def update_deleted(self):
         sql_user = []
         for row in self.engine.execute("SELECT samaccountname FROM custom.activedirectory WHERE is_deleted = 'false' ORDER BY samaccountname"):
-            sql_user.append(row[0].encode('utf-8'))
+            if row[0]:
+                sql_user.append(row[0].encode('utf-8'))
         self.users = self.ad.get_users()
-        self.users.sort()
         for i in sql_user:
             if not i in self.users:
                 logging.info("User %s was deleted from LDAP" % i)
-                self.engine.execute("UPDATE custom.activedirectory SET is_deleted = 'true' where samaccountname = '%s'" % i)
+                self.engine.execute("UPDATE custom.activedirectory SET is_deleted = 'true' where username = '%s'" % i)
 
     """Creates the url that should exist if the user has a gravatar picture conected with his email. 
     Then it checks if the url exists"""
@@ -174,7 +182,7 @@ class CustomUpdater(object):
                     has_avatar = 'false'
             except (IndexError, KeyError, TypeError):
                 has_avatar = 'false'
-            self.engine.execute('UPDATE custom.activedirectory SET has_gravatar=\'%s\' WHERE samaccountname=\'%s\';' % (has_avatar, user))
+            self.engine.execute('UPDATE custom.activedirectory SET has_gravatar=\'%s\' WHERE username=\'%s\';' % (has_avatar, user))
 
     def find_matches(self, newu):
         urls = []
@@ -203,6 +211,7 @@ class CustomUpdater(object):
         """Updates all the fields in all the custom tables"""
 
         logging.info("Updating changes from AD...")
+
         self.update_activedirectory(full=full)
 
         for row in self.engine.execute('SELECT CURRENT_DATE'):
@@ -251,10 +260,14 @@ where ad.managerdn is not NULL AND ad.manager != ad2.username
 
     def insert_fields(self, insert_query, atr):
         """Updates the insert_query string with the same fields as the ones above"""
+        first = True
         for i in range(len(self.sql_names)):
             try:
                 atr[self.fields[i]]
-                insert_query += ', \'' + self.escape_quote(atr[self.fields[i]]).encode('utf-8') + '\''
+                if not first:
+                    insert_query += ','
+                insert_query += '\'' + self.escape_quote(atr[self.fields[i]]).encode('utf-8') + '\''
+                first = False
             except (IndexError, KeyError):
                 pass
         return insert_query
@@ -340,7 +353,7 @@ def main():
         stats_uri=db_uri,
         activedirectory_uri=ad_uri)
 
-    custom.update_all(full=True)
+    custom.update_all(full=False)
 
 if __name__ == '__main__':
     main()
