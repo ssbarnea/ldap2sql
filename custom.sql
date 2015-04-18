@@ -3,16 +3,16 @@
 
  Source Server         : atlas
  Source Server Type    : PostgreSQL
- Source Server Version : 90305
+ Source Server Version : 90306
  Source Host           : atlas.xs.citrite.net
  Source Database       : jira
  Source Schema         : custom
 
  Target Server Type    : PostgreSQL
- Target Server Version : 90305
+ Target Server Version : 90306
  File Encoding         : utf-8
 
- Date: 02/09/2015 19:20:30 PM
+ Date: 04/18/2015 17:58:51 PM
 */
 
 -- ----------------------------
@@ -52,7 +52,9 @@ CREATE TABLE "custom"."activedirectory" (
 	"is_deleted" bool DEFAULT false,
 	"name" varchar COLLATE "default",
 	"useraccountcontrol" int8,
-	"counter" int8 NOT NULL DEFAULT 0
+	"counter" int8 NOT NULL DEFAULT 0,
+	"guid" varchar COLLATE "default",
+	"deleted" date
 )
 WITH (OIDS=FALSE);
 ALTER TABLE "custom"."activedirectory" OWNER TO "jira";

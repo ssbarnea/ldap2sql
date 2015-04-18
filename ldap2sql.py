@@ -157,7 +157,7 @@ class CustomUpdater(object):
         for i in sql_user:
             if not i in self.users:
                 logging.info("User %s was deleted from LDAP" % i)
-                self.engine.execute("UPDATE custom.activedirectory SET is_deleted = 'true' where username = '%s'" % i)
+                self.engine.execute("UPDATE custom.activedirectory SET is_deleted = 'true' and deleted = now() where username = '%s'" % i)
 
     """Creates the url that should exist if the user has a gravatar picture conected with his email. 
     Then it checks if the url exists"""
