@@ -106,13 +106,15 @@ class CustomUpdater(object):
     """Updates all the fields in custom.stats"""
 
     def update_stats(self):
+        try:
+            self.engine.execute('INSERT INTO custom.stats (date) (SELECT CURRENT_DATE);')
+        except Exception:
+            pass
         for row in self.engine.execute(jira_stats):
             self.elem_dict[str(row[0])] = row[1]
-            for key, value in self.elem_dict:
+            for key, value in self.elem_dict.iteritems():
                 update_query = 'UPDATE custom.stats SET %s=%s WHERE date=CURRENT_DATE;' % (key, value)
-                insert_query = 'INSERT INTO custom.stats (date, %s) (SELECT CURRENT_DATE, %s) WHERE NOT EXISTS (SELECT 1 FROM custom.stats WHERE date=CURRENT_DATE);' % (key, value)
-        self.engine.execute(update_query)
-        self.engine.execute(insert_query)
+                self.engine.execute(update_query)
 
     """Updates most of the fields in custom.activedirectory 
     
