@@ -372,7 +372,7 @@ def main():
 
     logging_format = "%(asctime).19s %(levelname)8s %(message)s"
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format=logging_format,
         #filename='%s.log' % JIRA_PROJECT,
         #mode="w"
