@@ -17,7 +17,9 @@ if cmd_folder not in sys.path:
 
 from activedirectory import ActiveDirectory
 
-jira_stats = """select 'issues' as metric, count(*) as value from jiraissue 
+jira_stats = """
+
+select 'issues' as metric, count(*) as value from jiraissue
             UNION
             select 'projects', count(*) from project
             UNION
@@ -33,8 +35,49 @@ jira_stats = """select 'issues' as metric, count(*) as value from jiraissue
             UNION
             SELECT 'users_active', count(*)
             FROM cwd_user, cwd_user_attributes
-            WHERE cwd_user_attributes.user_id = cwd_user.id 
-            AND cwd_user_attributes.attribute_name = 'login.previousLoginMillis';"""
+            WHERE cwd_user_attributes.user_id = cwd_user.id
+            AND cwd_user_attributes.attribute_name = 'login.previousLoginMillis'
+
+UNION
+	select 'roles', count(*) as roles from projectrole
+UNION
+	select 'dashboards', count(*) as dashboards from portalpage
+UNION
+	select 'plugins', count(*) as plugins from pluginstate where pluginenabled = 'true' 
+UNION
+	select 'actions', count(*) as actions from jiraaction
+UNION
+	select 'issuetypes', count(*) as issuetype from issuetype
+UNION
+	select 'statuses', count(*) as issuestatus from issuestatus
+UNION
+	select 'issuetypescreenschemes', count(*) from issuetypescreenscheme
+UNION
+	select 'issuelinktypes', count(*) from issuelinktype
+UNION
+	select 'fieldscreenschemes', count(*) from fieldscreenscheme
+UNION
+	select 'fieldscreens', count(*) from fieldscreen
+UNION
+	select 'fieldlayouts', count(*) from fieldlayout
+UNION
+	select 'fieldlayoutschemes', count(*) from fieldlayoutscheme
+UNION
+	select 'fieldconfigscheme', count(*) from fieldconfigscheme
+UNION
+	select 'changegroup', count(*) from changegroup
+UNION
+	select 'changeitem', count(*) from changeitem
+UNION
+	select 'agileboards', count(*) from "AO_60DB71_RAPIDVIEW"
+UNION
+	select 'attachments', count(*) as attachments from fileattachment
+UNION
+    select 'attachments_gb', round(sum(filesize)/1024/1024/1024) as attachments_gb from fileattachment
+order by metric
+;
+
+"""
 
 
 class CustomUpdater(object):
@@ -65,15 +108,9 @@ class CustomUpdater(object):
     def update_stats(self):
         for row in self.engine.execute(jira_stats):
             self.elem_dict[str(row[0])] = row[1]
-
-        update_query = 'UPDATE custom.stats SET workflows=' + str(self.elem_dict['workflows']) + ', customfields=' + \
-                str(self.elem_dict['customfields']) + ', issues=' + str(self.elem_dict['issues']) + ', projects=' + str(self.elem_dict['projects']) + \
-                ', users=' + str(self.elem_dict['users']) + ', users_active=' + str(self.elem_dict['users_active']) + ' WHERE date=CURRENT_DATE;'
-        insert_query = 'INSERT INTO custom.stats (date, workflows, customfields, issues, projects, users, users_active) ' +\
-                'SELECT CURRENT_DATE, ' + str(self.elem_dict['workflows']) + ', ' + str(self.elem_dict['customfields']) +\
-                ', ' + str(self.elem_dict['issues']) + ', ' + str(self.elem_dict['projects']) + ', ' + str(self.elem_dict['users']) +\
-                ', ' + str(self.elem_dict['users_active']) +\
-                ' WHERE NOT EXISTS (SELECT 1 FROM custom.stats WHERE date=CURRENT_DATE);'
+            for key, value in self.elem_dict:
+                update_query = 'UPDATE custom.stats SET %s=%s WHERE date=CURRENT_DATE;' % (key, value)
+                insert_query = 'INSERT INTO custom.stats (date, %s) (SELECT CURRENT_DATE, %s) WHERE NOT EXISTS (SELECT 1 FROM custom.stats WHERE date=CURRENT_DATE);' % (key, value)
         self.engine.execute(update_query)
         self.engine.execute(insert_query)
 
